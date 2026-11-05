@@ -30,7 +30,10 @@ count and little-endian 16-bit counts.
 - **Every spectrum** is one 1-D `NDUInt16` NDArray [pixels] on address 0,
   the counts in the board's stream order, stamped at the end of the
   exposure; attributes `IntegrationTime` (ms), `Averages`, `BoardTime` (s on
-  the board's clock), `LevelMax`, `Saturated`, `Pixels`.
+  the board's clock, from `*CONTR:TIMESTAMP?` after the readout),
+  `RawHeaderTime` (Raw mode: the raw block's own clock, the low 32 bits of
+  the same count, which wrap every 71.6 min), `LevelMax`, `Saturated`,
+  `Pixels`.
 - **Wavelength**: the board's fit polynomial `*PARA:FIT0..4` evaluated per
   pixel index, `Wavelength_RBV` (nm). Which end of the stream is pixel 0
   when the board's `DIRECTion` is 1 (highest pixel first) is a question for
@@ -40,8 +43,9 @@ count and little-endian 16-bit counts.
   s, clamped to the board's `*CONF:MINTIN?` .. 65 s), `NumExposures` (the
   board's averages, 1..10000), `AcquirePeriod`.
 - **TriggerMode Internal**: each frame is `*MEAS:LIGHT tint av 1`
-  (`RawMode` Raw: `*MEAS:RAW`, whose block starts with the board's
-  microsecond clock), the BEL awaited for tint × av + 2 s.
+  (`RawMode` Raw: `*MEAS:RAW`, whose block starts with an 8-byte header),
+  the BEL awaited for tint × av + 2 s, then `*CONTR:TIMESTAMP?` for
+  `BoardTime`.
 - **TriggerMode External**: the board's trigger mode 1, in which the TTL
   edge on its Trigger In starts a measurement with the board's **stored**
   integration time and averages (`*PARA:TINT`, `*PARA:AVER`, shown as
@@ -79,9 +83,13 @@ ADC, fit or network parameter.
 
 `SPECFIRM_PE65_THORLABS 1.2.0`: BEL arrives tint × av + about 5 ms after
 ACK and the 4 100-byte block within 1 ms; the first light measurement after
-power-up carried 65535 in the last word of its stream; a measurement's
-arguments do not change the stored `*PARA:TINT`/`AVER`; an unknown command
-NAKs with the error word still 0. Details and the transcripts: geecs-epics
+power-up, and again the first after an idle period of hours, carried 65535
+in the last word of its stream (`Saturated_RBV` flags it; later frames are
+clean); a measurement's arguments do not change the stored
+`*PARA:TINT`/`AVER`; an unknown command NAKs with the error word still 0;
+the raw block's header clock is the low 32 bits of `*CONTR:TIMESTAMP?`'s
+count; the driver sustains about 93 spectra/s at 2.44 ms on the unit.
+Details and the transcripts: geecs-epics
 `services/undulator/spectrometers/ccttest1/README.md`.
 
 ## The entity
