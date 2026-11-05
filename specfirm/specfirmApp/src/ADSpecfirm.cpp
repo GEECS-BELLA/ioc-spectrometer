@@ -651,7 +651,7 @@ bool ADSpecfirm::frameInternal(double tintMs, int averages, bool raw)
     if (!send(cmd))
         return false;
     unsigned char first;
-    if (!readByte(&first, 2.0)) {
+    if (!readByteSkippingBell(&first, 2.0)) {
         fail("no answer to", cmd);
         disconnect("the board does not answer");
         return false;
