@@ -35,7 +35,7 @@ ADSpecfirm::ADSpecfirm(const char *portName, const char *linePort, int maxPixels
       pasynUserLine_(NULL), maxPixels_(maxPixels > 0 ? maxPixels : 4096), pixels_(0),
       connected_(false), exposing_(false), boardTrigger_(0), boardSlope_(0),
       storedTintMs_(0.0), storedAverages_(1), minTintMs_(0.01), rawHeaderUs_(0), strayBells_(0),
-      uniqueId_(0)
+      strayBlocks_(0), uniqueId_(0)
 {
     strncpy(linePort_, linePort, sizeof linePort_ - 1);
     linePort_[sizeof linePort_ - 1] = '\0';
@@ -209,32 +209,45 @@ void ADSpecfirm::deviceError(char *buf, size_t size)
     memmove(buf, s, strlen(s) + 1);
 }
 
-/* A query: the answer line, or false with the board's reason in LastError. */
+/* A query: the answer line, or false with the board's reason in LastError.
+ * A board left in its trigger mode 3 by another client sends BEL and a
+ * whole data block on every edge: a reply that starts with a byte that is
+ * no text (the block's length word) is drained and the query sent once
+ * more. */
 bool ADSpecfirm::query(const char *command, char *reply, size_t size, double timeout)
 {
-    reply[0] = '\0';
-    if (!send(command))
-        return false;
-    unsigned char first;
-    if (!readByteSkippingBell(&first, timeout)) {
-        fail("no answer to", command);
-        return false;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        reply[0] = '\0';
+        if (!send(command))
+            return false;
+        unsigned char first;
+        if (!readByteSkippingBell(&first, timeout)) {
+            fail("no answer to", command);
+            return false;
+        }
+        if (first == NAK) {
+            char why[128];
+            deviceError(why, sizeof why);
+            fail(command, why);
+            return false;
+        }
+        if (first == '\r' || first == ETX) {
+            setStringParam(ADStringFromServer, "");
+            return true;
+        }
+        if (first < 0x20 || first == ACK) {
+            strayBlocks_++;
+            drain();
+            continue;
+        }
+        reply[0] = static_cast<char>(first);
+        reply[1] = '\0';
+        bool ok = readLine(reply + 1, size - 1, 0.5);
+        setStringParam(ADStringFromServer, reply);
+        return ok;
     }
-    if (first == NAK) {
-        char why[128];
-        deviceError(why, sizeof why);
-        fail(command, why);
-        return false;
-    }
-    if (first == '\r' || first == ETX) {
-        setStringParam(ADStringFromServer, "");
-        return true;
-    }
-    reply[0] = static_cast<char>(first);
-    reply[1] = '\0';
-    bool ok = readLine(reply + 1, size - 1, 0.5);
-    setStringParam(ADStringFromServer, reply);
-    return ok;
+    fail("no text answer to", command);
+    return false;
 }
 
 /* A setting: ACK, or false with the reason. */
@@ -882,9 +895,9 @@ void ADSpecfirm::report(FILE *fp, int details)
     char model[64] = "", version[64] = "";
     getStringParam(ADModel, sizeof model, model);
     getStringParam(ADFirmwareVersion, sizeof version, version);
-    fprintf(fp, "ADSpecfirm %s on %s: %s (%s), %d pixels, trigger %d, stored %.3f ms x %d, %u stray BEL\n",
+    fprintf(fp, "ADSpecfirm %s on %s: %s (%s), %d pixels, trigger %d, stored %.3f ms x %d, %u stray BEL, %u stray blocks\n",
             portName, linePort_, connected_ ? model : "not connected", version, pixels_,
-            boardTrigger_, storedTintMs_, storedAverages_, strayBells_);
+            boardTrigger_, storedTintMs_, storedAverages_, strayBells_, strayBlocks_);
     ADDriver::report(fp, details);
 }
 

@@ -137,6 +137,7 @@ private:
     char *block_;            /* 8 + 2 * maxPixels bytes */
     epicsUInt32 rawHeaderUs_; /* the raw block's clock, low 32 bits */
     unsigned strayBells_;     /* BELs skipped where text or a length word was expected */
+    unsigned strayBlocks_;    /* unsolicited blocks (a foreign trigger mode 3) drained before a query's retry */
     int uniqueId_;
     epicsEventId wake_;
 };

@@ -55,8 +55,11 @@ count and little-endian 16-bit counts.
   of an acquisition, the driver sets them (RAM). A stop while waiting for a
   trigger ends at once; the board stays in its trigger mode, so a later
   edge's BEL can arrive at any time: the driver skips a BEL wherever text or
-  a length word is expected (the board's only unsolicited byte; counted in
-  `report`), and `send` flushes the line before each command.
+  a length word is expected (counted in `report`), and `send` flushes the
+  line before each command. A board left in trigger mode 3 by another
+  client sends BEL and a whole block on every edge: a text reply that begins
+  with a byte that is no text is drained and the query sent once more
+  (counted too); the driver itself never selects mode 3 (External is mode 1).
 - **Status** every 10 s while idle (ADBase's `ReadStatus`, given `SCAN 10
   second` by the template):
   `*MEAS:TEMPE` into `TemperatureActual`, `*CONTR:MOTOR?` into
