@@ -455,6 +455,10 @@ void ADSpecfirm::acquisitionTask()
         int acquire = 0;
         getIntegerParam(ADAcquire, &acquire);
         if (!acquire) {
+            int state = ADStatusIdle;
+            getIntegerParam(ADStatus, &state);
+            if (state == ADStatusAcquire || state == ADStatusReadout || state == ADStatusWaiting)
+                setStatus(ADStatusIdle, "stopped");
             callParamCallbacks();
             unlock();
             epicsEventWait(wake_);
@@ -734,12 +738,15 @@ void ADSpecfirm::publish(const epicsTimeStamp &stamp, size_t n, double boardTime
         }
     }
 
-    int imageMode = ADImageContinuous, numImages = 1;
+    int imageMode = ADImageContinuous, numImages = 1, acquire = 1;
     getIntegerParam(ADImageMode, &imageMode);
     getIntegerParam(ADNumImages, &numImages);
+    getIntegerParam(ADAcquire, &acquire);
     if (imageMode == ADImageSingle ||
         (imageMode == ADImageMultiple && imagesCounter >= numImages))
         finishAcquisition();
+    else if (!acquire)
+        setStatus(ADStatusIdle, "stopped");
     else
         setStatus(ADStatusAcquire, "acquiring");
 }
@@ -823,6 +830,21 @@ asynStatus ADSpecfirm::writeFloat64(asynUser *pasynUser, epicsFloat64 value)
         setDoubleParam(function, value);
     }
     callParamCallbacks();
+    return asynSuccess;
+}
+
+/* The wavelength axis on demand (the record's PINI, a caget-triggered
+ * processing); I/O Intr callbacks carry it with every frame as well. */
+asynStatus ADSpecfirm::readFloat64Array(asynUser *pasynUser, epicsFloat64 *value,
+                                        size_t nElements, size_t *nIn)
+{
+    if (pasynUser->reason != P_Wavelength)
+        return ADDriver::readFloat64Array(pasynUser, value, nElements, nIn);
+    size_t n = static_cast<size_t>(pixels_);
+    if (n > nElements)
+        n = nElements;
+    memcpy(value, wavelength_, n * sizeof(epicsFloat64));
+    *nIn = n;
     return asynSuccess;
 }
 

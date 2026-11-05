@@ -62,12 +62,15 @@ record(longin, "$(P)$(R)Pixels_RBV")
     field(SCAN, "I/O Intr")
 }
 
-# The wavelength of each pixel index from the board's fit polynomial, nm
+# The wavelength of each pixel index from the board's fit polynomial, nm:
+# read once at init (the connect's callback comes before any record listens)
+# and with every frame
 record(waveform, "$(P)$(R)Wavelength_RBV")
 {
     field(DTYP, "asynFloat64ArrayIn")
     field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_WAVELENGTH")
     field(SCAN, "I/O Intr")
+    field(PINI, "YES")
     field(FTVL, "DOUBLE")
     field(NELM, "$(NELM)")
     field(EGU,  "nm")

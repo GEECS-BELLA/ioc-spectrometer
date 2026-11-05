@@ -72,6 +72,8 @@ public:
 
     asynStatus writeInt32(asynUser *pasynUser, epicsInt32 value) override;
     asynStatus writeFloat64(asynUser *pasynUser, epicsFloat64 value) override;
+    asynStatus readFloat64Array(asynUser *pasynUser, epicsFloat64 *value,
+                                size_t nElements, size_t *nIn) override;
     void report(FILE *fp, int details) override;
 
     void acquisitionTask();
