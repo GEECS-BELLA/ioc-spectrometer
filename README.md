@@ -88,8 +88,12 @@ in the last word of its stream (`Saturated_RBV` flags it; later frames are
 clean); a measurement's arguments do not change the stored
 `*PARA:TINT`/`AVER`; an unknown command NAKs with the error word still 0;
 the raw block's header clock is the low 32 bits of `*CONTR:TIMESTAMP?`'s
-count; the driver sustains about 93 spectra/s at 2.44 ms on the unit.
-Details and the transcripts: geecs-epics
+count; the driver sustains about 93 spectra/s at 2.44 ms on the unit; the
+board takes `*PARA:TRIG 1`/`0`, `*PARA:TRSL`, `*PARA:TINT` and `*PARA:AVER`
+with ACK and reads them back, runs a software measurement at once even in
+trigger mode, and its shutter motor takes `*CONTR:MOTOR 1`/`0` (not driven by
+the driver; `*MEAS:DARK` does not move it). Details and the transcripts:
+geecs-epics
 `services/undulator/spectrometers/ccttest1/README.md`.
 
 ## The entity
