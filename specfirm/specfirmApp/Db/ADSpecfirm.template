@@ -1,0 +1,265 @@
+# JETI SPECFIRM spectrometer boards (Thorlabs CCT series): the areaDetector
+# driver's records (ADSpecfirm).
+# Macros: P (device prefix), R (driver, e.g. SPEC1:), PORT, TIMEOUT, ADDR (0),
+#         NELM (the most pixels this IOC takes: MAX_PIXELS)
+#
+# ADBase supplies Acquire, ImageMode, NumImages, TriggerMode (Internal /
+# External), AcquireTime (the integration time, s), NumExposures (the board's
+# averages), AcquirePeriod, DetectorState, the identity and the array
+# counters. The output records take their initial values from the driver,
+# which reads them from the board: nothing is written at start. The
+# vendor-neutral names at the device root are ADSpecfirm_spectrometer.template.
+
+include "ADBase.template"
+
+# The integration time in s: the driver clamps to the board's range
+# (*CONF:MINTIN? to 65 s) and AcquireTime_RBV shows what a frame used.
+record(ao, "$(P)$(R)AcquireTime")
+{
+    field(DESC, "Integration time")
+    field(EGU,  "s")
+    field(PREC, "5")
+    field(DRVL, "0.00001")
+    field(DRVH, "65")
+}
+record(ai, "$(P)$(R)AcquireTime_RBV")
+{
+    field(EGU,  "s")
+    field(PREC, "5")
+}
+
+# The board's averages per spectrum (1..10000)
+record(longout, "$(P)$(R)NumExposures")
+{
+    field(DESC, "Averages per spectrum")
+    field(DRVL, "1")
+    field(DRVH, "10000")
+}
+
+record(bi, "$(P)$(R)Connected_RBV")
+{
+    field(DTYP, "asynInt32")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_CONNECTED")
+    field(SCAN, "I/O Intr")
+    field(ZNAM, "Disconnected")
+    field(ZSV,  "MAJOR")
+    field(ONAM, "Connected")
+}
+
+record(waveform, "$(P)$(R)LastError_RBV")
+{
+    field(DTYP, "asynOctetRead")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_LAST_ERROR")
+    field(SCAN, "I/O Intr")
+    field(FTVL, "CHAR")
+    field(NELM, "256")
+}
+
+record(longin, "$(P)$(R)Pixels_RBV")
+{
+    field(DTYP, "asynInt32")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_PIXELS")
+    field(SCAN, "I/O Intr")
+}
+
+# The wavelength of each pixel index from the board's fit polynomial, nm
+record(waveform, "$(P)$(R)Wavelength_RBV")
+{
+    field(DTYP, "asynFloat64ArrayIn")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_WAVELENGTH")
+    field(SCAN, "I/O Intr")
+    field(FTVL, "DOUBLE")
+    field(NELM, "$(NELM)")
+    field(EGU,  "nm")
+    field(PREC, "3")
+}
+
+record(ai, "$(P)$(R)Fit0_RBV")
+{
+    field(DTYP, "asynFloat64")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_FIT0")
+    field(SCAN, "I/O Intr")
+    field(PREC, "7")
+}
+record(ai, "$(P)$(R)Fit1_RBV")
+{
+    field(DTYP, "asynFloat64")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_FIT1")
+    field(SCAN, "I/O Intr")
+    field(PREC, "7")
+}
+record(ai, "$(P)$(R)Fit2_RBV")
+{
+    field(DTYP, "asynFloat64")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_FIT2")
+    field(SCAN, "I/O Intr")
+    field(PREC, "7")
+}
+record(ai, "$(P)$(R)Fit3_RBV")
+{
+    field(DTYP, "asynFloat64")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_FIT3")
+    field(SCAN, "I/O Intr")
+    field(PREC, "7")
+}
+record(ai, "$(P)$(R)Fit4_RBV")
+{
+    field(DTYP, "asynFloat64")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_FIT4")
+    field(SCAN, "I/O Intr")
+    field(PREC, "7")
+}
+
+record(bi, "$(P)$(R)Direction_RBV")
+{
+    field(DTYP, "asynInt32")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_DIRECTION")
+    field(SCAN, "I/O Intr")
+    field(ZNAM, "Lowest pixel first")
+    field(ONAM, "Highest pixel first")
+}
+
+record(ai, "$(P)$(R)MinIntegration_RBV")
+{
+    field(DTYP, "asynFloat64")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_MIN_TINT")
+    field(SCAN, "I/O Intr")
+    field(EGU,  "s")
+    field(PREC, "5")
+}
+
+record(longin, "$(P)$(R)LevelMax_RBV")
+{
+    field(DTYP, "asynInt32")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_LEVEL_MAX")
+    field(SCAN, "I/O Intr")
+    field(EGU,  "counts")
+}
+
+record(longin, "$(P)$(R)LevelPercent_RBV")
+{
+    field(DTYP, "asynInt32")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_LEVEL_PCT")
+    field(SCAN, "I/O Intr")
+    field(EGU,  "%")
+}
+
+record(bi, "$(P)$(R)Saturated_RBV")
+{
+    field(DTYP, "asynInt32")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_SATURATED")
+    field(SCAN, "I/O Intr")
+    field(ZNAM, "OK")
+    field(ONAM, "Saturated")
+    field(OSV,  "MAJOR")
+}
+
+# The board's own clock at the frame, s since it started
+record(ai, "$(P)$(R)BoardTime_RBV")
+{
+    field(DTYP, "asynFloat64")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_BOARD_TIME")
+    field(SCAN, "I/O Intr")
+    field(EGU,  "s")
+    field(PREC, "6")
+}
+
+# Internal mode: *MEAS:LIGHT (Light) or *MEAS:RAW (Raw, the block carries the board clock)
+record(bo, "$(P)$(R)RawMode")
+{
+    field(DTYP, "asynInt32")
+    field(OUT,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_RAW_MODE")
+    field(ZNAM, "Light")
+    field(ONAM, "Raw")
+    info(asyn:READBACK, "1")
+}
+record(bi, "$(P)$(R)RawMode_RBV")
+{
+    field(DTYP, "asynInt32")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_RAW_MODE")
+    field(SCAN, "I/O Intr")
+    field(ZNAM, "Light")
+    field(ONAM, "Raw")
+}
+
+record(bo, "$(P)$(R)TriggerSlope")
+{
+    field(DTYP, "asynInt32")
+    field(OUT,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_TRIGGER_SLOPE")
+    field(ZNAM, "Rising")
+    field(ONAM, "Falling")
+    info(asyn:READBACK, "1")
+}
+record(bi, "$(P)$(R)TriggerSlope_RBV")
+{
+    field(DTYP, "asynInt32")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_TRIGGER_SLOPE")
+    field(SCAN, "I/O Intr")
+    field(ZNAM, "Rising")
+    field(ONAM, "Falling")
+}
+
+record(waveform, "$(P)$(R)Sensor_RBV")
+{
+    field(DTYP, "asynOctetRead")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_SENSOR")
+    field(SCAN, "I/O Intr")
+    field(FTVL, "CHAR")
+    field(NELM, "64")
+}
+
+record(stringin, "$(P)$(R)BoardSerial_RBV")
+{
+    field(DTYP, "asynOctetRead")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_BOARD_SERIAL")
+    field(SCAN, "I/O Intr")
+}
+
+record(stringin, "$(P)$(R)SpectrometerSerial_RBV")
+{
+    field(DTYP, "asynOctetRead")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_SPEC_SERIAL")
+    field(SCAN, "I/O Intr")
+}
+
+# The board's stored defaults (*PARA:TINT, *PARA:AVER): what External mode
+# measures with; written only when the setpoints differ, RAM only
+record(ai, "$(P)$(R)StoredIntegration_RBV")
+{
+    field(DTYP, "asynFloat64")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_TINT_STORED")
+    field(SCAN, "I/O Intr")
+    field(EGU,  "s")
+    field(PREC, "5")
+}
+
+record(longin, "$(P)$(R)StoredAverages_RBV")
+{
+    field(DTYP, "asynInt32")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_AVER_STORED")
+    field(SCAN, "I/O Intr")
+}
+
+record(mbbi, "$(P)$(R)BoardTrigger_RBV")
+{
+    field(DTYP, "asynInt32")
+    field(INP,  "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))SPECFIRM_BOARD_TRIGGER")
+    field(SCAN, "I/O Intr")
+    field(ZRST, "Disabled")
+    field(ZRVL, "0")
+    field(ONST, "Measure")
+    field(ONVL, "1")
+    field(TWST, "Enquiry")
+    field(TWVL, "2")
+    field(THST, "Measure, single")
+    field(THVL, "3")
+}
+
+# Temperature, the shutter motor's state and the board's error word, every
+# 10 s while idle (the driver skips the read during an exposure)
+record(bo, "$(P)$(R)StatusPoll")
+{
+    field(SCAN, "10 second")
+    field(VAL,  "1")
+    field(OUT,  "$(P)$(R)ReadStatus PP")
+}

@@ -1,0 +1,10 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: 4.8.0
+_src_path: gh:epics-containers/ioc-template
+description: 'Generic IOC for compact spectrometers as areaDetector drivers: Thorlabs
+    CCT series (JETI SPECFIRM boards) over a serial line'
+git_platform: github.com
+github_org: GEECS-BELLA
+name: ioc-spectrometer
+repo_uri: git@github.com:GEECS-BELLA/ioc-spectrometer.git
+rtems: false

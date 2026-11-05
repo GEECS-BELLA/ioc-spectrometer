@@ -1,0 +1,123 @@
+# Generic IOC ioc-spectrometer
+
+Compact spectrometers as areaDetector drivers, for GEECS (geecs-epics
+decision 14: a spectrum is an NDArray per capture, so the plugin chain,
+HDF5 and PVA apply; decision 11: one image per family). Built on
+epics-containers' `ioc-adaravis` developer image R2-3ec3, as ioc-picoscope
+is: EPICS base, asyn, autosave, iocStats, calc, busy and ADCore (HDF5, PVA,
+the plugins) already built, the same stack the camera and scope IOCs run,
+plus:
+
+| Module | Version | Source | Reuse (decision 10) |
+|---|---|---|---|
+| specfirm (`ADSpecfirm`) | this repository | ours: written from JETI's "Operating Instructions Firmware SPECFIRM_xxx", document revision 170 (2024), and the Thorlabs build's recorded answers (geecs-epics `services/undulator/spectrometers/ccttest1/`) | written (no EPICS driver for any JETI board existed, search of 2026-11-05 in the catalogue row) |
+
+No vendor code: the board's firmware commands are documented, so CI
+publishes this image. First device: a Thorlabs CCT compact spectrometer, a
+JETI PE65 board (geecs-epics `services/undulator/spectrometers/ccttest1`).
+
+## The driver
+
+`ADSpecfirm` (`specfirm/specfirmApp/src/`) is an `ADDriver` over an asyn
+octet port, the board's line: its CDC-ACM virtual COM port
+(`asyn.AsynSerial`, any baud: the rate is symbolic, the transfer is USB high
+speed), its Ethernet port or a fake (`asyn.AsynIP`). The driver sets the
+port's terminators to none and frames the protocol itself: text replies end
+in CR, a setting answers ACK (0x06) or NAK (0x15), a measurement answers ACK,
+then BEL (0x07) when the exposure is over, then a block of a 16-bit byte
+count and little-endian 16-bit counts.
+
+- **Every spectrum** is one 1-D `NDUInt16` NDArray [pixels] on address 0,
+  the counts in the board's stream order, stamped at the end of the
+  exposure; attributes `IntegrationTime` (ms), `Averages`, `BoardTime` (s on
+  the board's clock), `LevelMax`, `Saturated`, `Pixels`.
+- **Wavelength**: the board's fit polynomial `*PARA:FIT0..4` evaluated per
+  pixel index, `Wavelength_RBV` (nm). Which end of the stream is pixel 0
+  when the board's `DIRECTion` is 1 (highest pixel first) is a question for
+  a line source on the bench; the driver does not reorder.
+- **Acquisition** is areaDetector's: `Acquire`, `ImageMode` (Single /
+  Multiple / Continuous), `NumImages`, `AcquireTime` (the integration time,
+  s, clamped to the board's `*CONF:MINTIN?` .. 65 s), `NumExposures` (the
+  board's averages, 1..10000), `AcquirePeriod`.
+- **TriggerMode Internal**: each frame is `*MEAS:LIGHT tint av 1`
+  (`RawMode` Raw: `*MEAS:RAW`, whose block starts with the board's
+  microsecond clock), the BEL awaited for tint × av + 2 s.
+- **TriggerMode External**: the board's trigger mode 1, in which the TTL
+  edge on its Trigger In starts a measurement with the board's **stored**
+  integration time and averages (`*PARA:TINT`, `*PARA:AVER`, shown as
+  `StoredIntegration_RBV` and `StoredAverages_RBV`) and the board sends BEL
+  when it is done; the driver then sends `*FETCH:LIGHT 1`. When
+  `AcquireTime` or `NumExposures` differ from the stored values at the start
+  of an acquisition, the driver sets them (RAM). A stop while waiting for a
+  trigger ends at once; a BEL from a later trigger is drained before the
+  next command.
+- **Status** every 10 s while idle (`StatusPoll` → `ReadStatus`):
+  `*MEAS:TEMPE` into `TemperatureActual`, `*CONTR:MOTOR?` into
+  `ShutterStatus_RBV` (the shutter motor's state as the board reports it;
+  the driver does not drive it, `ShutterControl` is accepted and ignored
+  until the bench says what 1 and 0 do), `*STAT:TXTERR?` into `LastError_RBV`
+  when non-zero. Never during an exposure.
+- **Level**: `LevelMax_RBV`, `LevelPercent_RBV` and `Saturated_RBV`
+  (MAJOR) from each frame.
+
+### What the driver writes, and never writes
+
+Nothing at start: it reads `*IDN?`, `*VERS?`, the serial numbers, the sensor,
+the pixel count, the direction, the fit, `*CONF:MINTIN?`, `*PARA:TINT?`,
+`*PARA:AVER?`, `*PARA:TRIG?` and `*PARA:TRSL?`, and the output records take
+their initial values from it (asyn's init read), so the PINI writes of
+ADBase's records change nothing on the board. It writes, on the operator's
+command, `*PARA:TRIG` and `*PARA:TRSL` (when `TriggerMode` or
+`TriggerSlope` differ from the board's) and, in External mode, `*PARA:TINT`
+and `*PARA:AVER` (when the setpoints differ from the stored values): RAM
+settings the board forgets at power-off. It never sends `*PARA:SAVE`,
+`*PARA:DEF`, `*PARA:BACKUP`/`RESTORE`, `*RST`, `*BOOT`, `*USBRST`, `*SLEEP`,
+any `*CALIB` or `*MMEM` command, the shutter motor, the LED, or a sensor,
+ADC, fit or network parameter.
+
+### Behaviour recorded on the Thorlabs build (2026-11-05)
+
+`SPECFIRM_PE65_THORLABS 1.2.0`: BEL arrives tint × av + about 5 ms after
+ACK and the 4 100-byte block within 1 ms; the first light measurement after
+power-up carried 65535 in the last word of its stream; a measurement's
+arguments do not change the stored `*PARA:TINT`/`AVER`; an unknown command
+NAKs with the error word still 0. Details and the transcripts: geecs-epics
+`services/undulator/spectrometers/ccttest1/README.md`.
+
+## The entity
+
+`specfirm.ADSpecfirm` (`ibek-support-geecs/specfirm/specfirm.ibek.support.yaml`):
+`ADSpecfirmConfig(PORT, LINE, MAX_PIXELS, MAX_BUFFERS, MAX_MEMORY)` and the
+two templates, `ADSpecfirm.template` (the driver's records under `P R`,
+ADBase included) and `ADSpecfirm_spectrometer.template` (the vendor-neutral
+names aliased at `P`: `Acquire`, `ImageMode`, `NumImages`, `TriggerMode`,
+`TriggerSlope`, `IntegrationTime`, `Averages`, `AcquirePeriod`, `RawMode`,
+`Pixels_RBV`, `Wavelength_RBV`, `LevelMax_RBV`, `LevelPercent_RBV`,
+`Saturated_RBV`, `BoardTime_RBV`, `Connected_RBV`, `DetectorState_RBV`,
+`StatusMessage_RBV`, `LastError_RBV`, `ArrayCounter_RBV`,
+`TemperatureActual`, the identity and the fit). `LINE` names the line's asyn
+port: an `asyn.AsynSerial` or `asyn.AsynIP` entity, or a port made by a
+startup command. `MAX_PIXELS` (default 4096) sizes the buffers and
+`Wavelength_RBV`; a board with more refuses to connect.
+
+An instance: geecs-epics `services/undulator/spectrometers/ccttest1/config/ioc.yaml`,
+with the chain (`NDStdArrays`, `NDPvxsPlugin`, `NDFileHDF5`, `NDProcess`
+for a background, `NDStats`).
+
+## Build
+
+CI publishes `ghcr.io/geecs-bella/ioc-spectrometer-runtime:<tag>` and
+`-developer` on a git tag (CalVer `YYYY.M.N`; a pre-release tag such as
+`2026.11.1b1` for bench work from a branch). Locally:
+
+    DOCKER_DEFAULT_PLATFORM=linux/amd64 TARGET=runtime TAG=ioc-spectrometer:local ./build
+
+(the variable is required on Apple silicon). `tests/run-tests.sh <tag>` starts
+the image with `tests/config` (no hardware).
+
+## Licence
+
+The driver and this repository: `LICENSE` (the GEECS licence, as the other
+GEECS-BELLA images); the template's Apache-2.0 kept as `LICENSE-ioc-template`.
+Nothing is copied from another driver: ArgyllCMS's `specbos.c` (GPL-2+) and
+a Python PE60_2 integration were read as references for the command set.

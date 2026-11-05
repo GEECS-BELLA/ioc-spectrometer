@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../ibek-support/_scripts/support_install_variables.json
+
+# The module's source is in this repository (specfirm/), copied to
+# /epics/support/specfirm by the Dockerfile before ansible.sh runs, so the
+# clone step finds it in place and builds it. It needs only what the base
+# image already has: EPICS base, asyn and ADCore. No vendor code.
+module: specfirm
+version: local
+
+dbds:
+  - specfirmSupport.dbd
+libs:
+  - specfirm

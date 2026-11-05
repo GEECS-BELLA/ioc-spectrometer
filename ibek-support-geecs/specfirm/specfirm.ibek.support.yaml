@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://github.com/epics-containers/ibek/releases/download/4.8.2/ibek.support.schema.json
+
+module: specfirm
+
+entity_models:
+  - name: ADSpecfirm
+    description: |-
+      A JETI SPECFIRM spectrometer board (Thorlabs CCT series, JETI PE60_2
+      and SDCM boards) as an areaDetector driver over an asyn octet port:
+      each spectrum is one NDUInt16 NDArray [pixels] on address 0, with the
+      integration time, the averages, the board's clock and the saturation
+      level as attributes. The driver's records live under P+R; the
+      vendor-neutral spectrometer names are aliased at P. The line is an
+      asyn.AsynSerial (the board's CDC-ACM port, any baud) or an asyn.AsynIP
+      (its Ethernet port, or a fake) with no terminators: the driver frames.
+    parameters:
+      PORT:
+        type: id
+        description: |-
+          asyn port name of the driver (plugins name it as NDARRAY_PORT)
+      LINE:
+        type: str
+        description: |-
+          The asyn octet port of the board's line (an asyn.AsynSerial or
+          asyn.AsynIP entity's name)
+      P:
+        type: str
+        description: |-
+          Device prefix, with its trailing colon, e.g. undulator:ccttest1:
+      R:
+        type: str
+        description: |-
+          The driver's record prefix under P
+        default: "SPEC1:"
+      MAX_PIXELS:
+        type: int
+        description: |-
+          The most pixels this IOC takes: sizes the driver's buffers and the
+          wavelength record (a board with more refuses to connect)
+        default: 4096
+      MAX_BUFFERS:
+        type: int
+        description: |-
+          NDArray pool: most buffers (0 = unlimited)
+        default: 0
+      MAX_MEMORY:
+        type: int
+        description: |-
+          NDArray pool: most bytes (0 = unlimited)
+        default: 0
+      TIMEOUT:
+        type: int
+        description: |-
+          asyn timeout of the records, s
+        default: 1
+
+    pre_init:
+      - type: text
+        value: |
+          # ADSpecfirmConfig(portName, linePort, maxPixels, maxBuffers, maxMemory)
+          ADSpecfirmConfig("{{PORT}}", "{{LINE}}", {{MAX_PIXELS}}, {{MAX_BUFFERS}}, {{MAX_MEMORY}})
+
+    databases:
+      - file: $(SPECFIRM)/db/ADSpecfirm.template
+        args: {P: "{{P}}", R: "{{R}}", PORT: "{{PORT}}", TIMEOUT: "{{TIMEOUT}}", ADDR: "0", NELM: "{{MAX_PIXELS}}"}
+      - file: $(SPECFIRM)/db/ADSpecfirm_spectrometer.template
+        args: {P: "{{P}}", R: "{{R}}"}
