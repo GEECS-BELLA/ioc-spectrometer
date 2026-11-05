@@ -134,6 +134,7 @@ private:
     epicsFloat64 *wavelength_;
     epicsUInt16 *frame_;
     char *block_;            /* 8 + 2 * maxPixels bytes */
+    epicsUInt32 rawHeaderUs_; /* the raw block's clock, low 32 bits */
     int uniqueId_;
     epicsEventId wake_;
 };

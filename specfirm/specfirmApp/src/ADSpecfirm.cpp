@@ -34,7 +34,7 @@ ADSpecfirm::ADSpecfirm(const char *portName, const char *linePort, int maxPixels
                ASYN_CANBLOCK, 1, 0, 0),
       pasynUserLine_(NULL), maxPixels_(maxPixels > 0 ? maxPixels : 4096), pixels_(0),
       connected_(false), exposing_(false), boardTrigger_(0), boardSlope_(0),
-      storedTintMs_(0.0), storedAverages_(1), minTintMs_(0.01), uniqueId_(0)
+      storedTintMs_(0.0), storedAverages_(1), minTintMs_(0.01), rawHeaderUs_(0), uniqueId_(0)
 {
     strncpy(linePort_, linePort, sizeof linePort_ - 1);
     linePort_[sizeof linePort_ - 1] = '\0';
@@ -646,13 +646,16 @@ bool ADSpecfirm::frameInternal(double tintMs, int averages, bool raw)
     size_t n = 0;
     if (!readBlock(raw ? rawHeader : 0, &n, 2.0))
         return false;
+    /* The board's clock after the readout, from its query (the microsecond
+     * count as text, unbounded). The raw block's header carries only the
+     * low 32 bits of that count, which wrap every 71.6 min (seen on the
+     * unit 2026-11-05): kept as RawHeaderTime, not used for BoardTime. */
     double boardTime = NAN;
+    readBoardTime(&boardTime);
+    rawHeaderUs_ = 0;
     if (raw) {
         const unsigned char *h = reinterpret_cast<const unsigned char *>(block_);
-        epicsUInt32 us = h[0] | (h[1] << 8) | (h[2] << 16) | (static_cast<epicsUInt32>(h[3]) << 24);
-        boardTime = us / 1e6;
-    } else {
-        readBoardTime(&boardTime);
+        rawHeaderUs_ = h[0] | (h[1] << 8) | (h[2] << 16) | (static_cast<epicsUInt32>(h[3]) << 24);
     }
     if (stopped) {
         setStatus(ADStatusIdle, "stopped: the last exposure discarded");
@@ -727,7 +730,11 @@ void ADSpecfirm::publish(const epicsTimeStamp &stamp, size_t n, double boardTime
             int avg = averages, maxC = static_cast<int>(maxCount), pix = static_cast<int>(n);
             array->pAttributeList->add("IntegrationTime", "Integration time (ms)", NDAttrFloat64, &tintMs);
             array->pAttributeList->add("Averages", "Scans averaged by the board", NDAttrInt32, &avg);
-            array->pAttributeList->add("BoardTime", "The board's clock (s)", NDAttrFloat64, &boardTime);
+            array->pAttributeList->add("BoardTime", "The board's clock after the readout (s)", NDAttrFloat64, &boardTime);
+            if (rawHeaderUs_) {
+                double rawHeaderS = rawHeaderUs_ / 1e6;
+                array->pAttributeList->add("RawHeaderTime", "The raw block's clock, low 32 bits (s, wraps)", NDAttrFloat64, &rawHeaderS);
+            }
             array->pAttributeList->add("LevelMax", "Highest count", NDAttrInt32, &maxC);
             array->pAttributeList->add("Saturated", "A pixel at full scale", NDAttrInt32, &saturated);
             array->pAttributeList->add("Pixels", "Pixels in the spectrum", NDAttrInt32, &pix);
