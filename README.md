@@ -53,9 +53,12 @@ count and little-endian 16-bit counts.
   when it is done; the driver then sends `*FETCH:LIGHT 1`. When
   `AcquireTime` or `NumExposures` differ from the stored values at the start
   of an acquisition, the driver sets them (RAM). A stop while waiting for a
-  trigger ends at once; a BEL from a later trigger is drained before the
-  next command.
-- **Status** every 10 s while idle (`StatusPoll` → `ReadStatus`):
+  trigger ends at once; the board stays in its trigger mode, so a later
+  edge's BEL can arrive at any time: the driver skips a BEL wherever text or
+  a length word is expected (the board's only unsolicited byte; counted in
+  `report`), and `send` flushes the line before each command.
+- **Status** every 10 s while idle (ADBase's `ReadStatus`, given `SCAN 10
+  second` by the template):
   `*MEAS:TEMPE` into `TemperatureActual`, `*CONTR:MOTOR?` into
   `ShutterStatus_RBV` (the shutter motor's state as the board reports it;
   the driver does not drive it, `ShutterControl` is accepted and ignored
@@ -70,11 +73,14 @@ Nothing at start: it reads `*IDN?`, `*VERS?`, the serial numbers, the sensor,
 the pixel count, the direction, the fit, `*CONF:MINTIN?`, `*PARA:TINT?`,
 `*PARA:AVER?`, `*PARA:TRIG?` and `*PARA:TRSL?`, and the output records take
 their initial values from it (asyn's init read), so the PINI writes of
-ADBase's records change nothing on the board. It writes, on the operator's
-command, `*PARA:TRIG` and `*PARA:TRSL` (when `TriggerMode` or
-`TriggerSlope` differ from the board's) and, in External mode, `*PARA:TINT`
-and `*PARA:AVER` (when the setpoints differ from the stored values): RAM
-settings the board forgets at power-off. It never sends `*PARA:SAVE`,
+ADBase's records repeat the values just read and the driver writes the
+trigger mode and slope only when a value changes. A board found in trigger
+mode 1 or 3 reads as External, 0 or 2 as Internal. It writes, on the
+operator's command, `*PARA:TRIG` and `*PARA:TRSL` (when `TriggerMode` or
+`TriggerSlope` change, and at an acquisition start when the board holds a
+mode other than the setpoint's: 1 for External, 0 for Internal) and, in
+External mode, `*PARA:TINT` and `*PARA:AVER` (when the setpoints differ
+from the stored values): RAM settings the board forgets at power-off. It never sends `*PARA:SAVE`,
 `*PARA:DEF`, `*PARA:BACKUP`/`RESTORE`, `*RST`, `*BOOT`, `*USBRST`, `*SLEEP`,
 any `*CALIB` or `*MMEM` command, the shutter motor, the LED, or a sensor,
 ADC, fit or network parameter.

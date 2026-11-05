@@ -34,7 +34,8 @@ ADSpecfirm::ADSpecfirm(const char *portName, const char *linePort, int maxPixels
                ASYN_CANBLOCK, 1, 0, 0),
       pasynUserLine_(NULL), maxPixels_(maxPixels > 0 ? maxPixels : 4096), pixels_(0),
       connected_(false), exposing_(false), boardTrigger_(0), boardSlope_(0),
-      storedTintMs_(0.0), storedAverages_(1), minTintMs_(0.01), rawHeaderUs_(0), uniqueId_(0)
+      storedTintMs_(0.0), storedAverages_(1), minTintMs_(0.01), rawHeaderUs_(0), strayBells_(0),
+      uniqueId_(0)
 {
     strncpy(linePort_, linePort, sizeof linePort_ - 1);
     linePort_[sizeof linePort_ - 1] = '\0';
@@ -164,13 +165,27 @@ bool ADSpecfirm::readByte(unsigned char *b, double timeout)
     return readBytes(reinterpret_cast<char *>(b), 1, timeout) == 1;
 }
 
+/* A byte where text or a length word is expected: a BEL there is the
+ * board's only unsolicited byte (a trigger edge's "done" while the board is
+ * in its trigger mode after a stop), skipped and counted. */
+bool ADSpecfirm::readByteSkippingBell(unsigned char *b, double timeout)
+{
+    for (;;) {
+        if (!readByte(b, timeout))
+            return false;
+        if (*b != BEL)
+            return true;
+        strayBells_++;
+    }
+}
+
 /* One CR-terminated answer, the CR dropped. */
 bool ADSpecfirm::readLine(char *buf, size_t size, double timeout)
 {
     size_t i = 0;
     for (;;) {
         unsigned char b;
-        if (!readByte(&b, i == 0 ? timeout : 0.5)) {
+        if (!readByteSkippingBell(&b, i == 0 ? timeout : 0.5)) {
             buf[i] = '\0';
             return false;
         }
@@ -201,7 +216,7 @@ bool ADSpecfirm::query(const char *command, char *reply, size_t size, double tim
     if (!send(command))
         return false;
     unsigned char first;
-    if (!readByte(&first, timeout)) {
+    if (!readByteSkippingBell(&first, timeout)) {
         fail("no answer to", command);
         return false;
     }
@@ -228,7 +243,7 @@ bool ADSpecfirm::set(const char *command)
     if (!send(command))
         return false;
     unsigned char first;
-    if (!readByte(&first, 1.0)) {
+    if (!readByteSkippingBell(&first, 1.0)) {
         fail("no answer to", command);
         return false;
     }
@@ -329,7 +344,11 @@ bool ADSpecfirm::connect()
     if (query("*PARA:TRIG?", reply, sizeof reply)) {
         boardTrigger_ = atoi(reply);
         setIntegerParam(P_BoardTrigger, boardTrigger_);
-        setIntegerParam(ADTriggerMode, boardTrigger_ == 0 ? ADTriggerInternal : ADTriggerExternal);
+        /* the measure modes (1, 3) are External; 0 and the enquiry mode (2)
+         * Internal. Nothing is written here: the setpoint takes this value
+         * and a later write of the same value changes nothing. */
+        setIntegerParam(ADTriggerMode, (boardTrigger_ == 1 || boardTrigger_ == 3)
+                                           ? ADTriggerExternal : ADTriggerInternal);
     }
     if (query("*PARA:TRSL?", reply, sizeof reply)) {
         boardSlope_ = atoi(reply);
@@ -582,12 +601,12 @@ bool ADSpecfirm::waitForBell(double limit, bool *stopped)
 bool ADSpecfirm::readBlock(size_t header, size_t *pixels, double timeout)
 {
     unsigned char len[2];
-    if (readBytes(reinterpret_cast<char *>(len), 2, timeout) != 2) {
+    if (!readByteSkippingBell(&len[0], timeout) || !readByte(&len[1], timeout)) {
         fail("no block after the measurement", "");
         return false;
     }
     size_t nbytes = len[0] | (static_cast<size_t>(len[1]) << 8);
-    size_t limit = rawHeader + 2 * static_cast<size_t>(maxPixels_);
+    size_t limit = header + 2 * static_cast<size_t>(maxPixels_);
     if (nbytes < header || ((nbytes - header) & 1) || nbytes > limit) {
         char msg[64];
         snprintf(msg, sizeof msg, "%zu bytes", nbytes);
@@ -803,12 +822,15 @@ asynStatus ADSpecfirm::writeInt32(asynUser *pasynUser, epicsInt32 value)
         }
         epicsEventSignal(wake_);
     } else if (function == ADTriggerMode || function == P_TriggerSlope) {
+        /* written to the board only when the value changes: the records'
+         * PINI writes at start repeat the values read from the board */
+        int current = 0;
+        getIntegerParam(function, &current);
         setIntegerParam(function, value);
-        if (connected_ && !exposing_)
+        if (value != current && connected_ && !exposing_)
             applyTrigger();
     } else if (function == ADReadStatus) {
-        if (value)
-            readStatus();
+        readStatus();
     } else if (function == NDDataType) {
         setIntegerParam(NDDataType, NDUInt16);
     } else if (function == ADShutterControl) {
@@ -860,9 +882,9 @@ void ADSpecfirm::report(FILE *fp, int details)
     char model[64] = "", version[64] = "";
     getStringParam(ADModel, sizeof model, model);
     getStringParam(ADFirmwareVersion, sizeof version, version);
-    fprintf(fp, "ADSpecfirm %s on %s: %s (%s), %d pixels, trigger %d, stored %.3f ms x %d\n",
+    fprintf(fp, "ADSpecfirm %s on %s: %s (%s), %d pixels, trigger %d, stored %.3f ms x %d, %u stray BEL\n",
             portName, linePort_, connected_ ? model : "not connected", version, pixels_,
-            boardTrigger_, storedTintMs_, storedAverages_);
+            boardTrigger_, storedTintMs_, storedAverages_, strayBells_);
     ADDriver::report(fp, details);
 }
 

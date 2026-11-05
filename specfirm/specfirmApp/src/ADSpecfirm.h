@@ -94,6 +94,7 @@ private:
     bool send(const char *command);
     size_t readBytes(char *buf, size_t n, double timeout);
     bool readByte(unsigned char *b, double timeout);
+    bool readByteSkippingBell(unsigned char *b, double timeout);
     bool readLine(char *buf, size_t size, double timeout);
     bool query(const char *command, char *reply, size_t size, double timeout = 1.0);
     bool set(const char *command);
@@ -135,6 +136,7 @@ private:
     epicsUInt16 *frame_;
     char *block_;            /* 8 + 2 * maxPixels bytes */
     epicsUInt32 rawHeaderUs_; /* the raw block's clock, low 32 bits */
+    unsigned strayBells_;     /* BELs skipped where text or a length word was expected */
     int uniqueId_;
     epicsEventId wake_;
 };
