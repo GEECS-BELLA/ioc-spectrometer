@@ -2,7 +2,14 @@
  * areaDetector driver for JETI SPECFIRM spectrometer boards (the PE65 in
  * Thorlabs' CCT series compact spectrometers, the PE60_2, SDCM3/4) over an
  * asyn octet port: the board's CDC-ACM virtual COM port, its Ethernet port
- * or a fake on TCP.
+ * or a fake on TCP. The port must be configured without asyn's EOS
+ * interpose (noProcessEos=1 on drvAsynSerialPortConfigure or
+ * drvAsynIPPortConfigure): the driver frames the bytes itself, and the
+ * interpose discards the bytes of a read that drvAsynSerialPort reports as
+ * a timeout, which it does for a byte arriving in the last ~0.1 s of a
+ * timed read; waiting for the measurement in 0.5 s slices, the driver lost
+ * the board's BEL that way on every exposure over 0.5 s, about one frame
+ * in five (geecs-epics, ccttest1, 2026-11-06).
  *
  * Every spectrum is one 1-D NDUInt16 NDArray [pixels] on address 0, the
  * detector's counts in stream order, stamped at the end of the exposure,

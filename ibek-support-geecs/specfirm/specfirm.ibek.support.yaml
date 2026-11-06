@@ -21,8 +21,10 @@ entity_models:
       LINE:
         type: str
         description: |-
-          The asyn octet port of the board's line (an asyn.AsynSerial or
-          asyn.AsynIP entity's name)
+          The asyn octet port of the board's line, configured without asyn's
+          EOS interpose (noProcessEos=1 on drvAsynSerialPortConfigure or
+          drvAsynIPPortConfigure): the driver frames the bytes itself, and
+          the interpose drops the bytes of a timed read reported as a timeout
       P:
         type: str
         description: |-
