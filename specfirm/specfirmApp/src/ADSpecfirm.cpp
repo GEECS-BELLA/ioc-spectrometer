@@ -134,7 +134,13 @@ ADSpecfirm::ADSpecfirm(const char *portName, const char *linePort, int maxPixels
 void ADSpecfirm::discardPending()
 {
     char junk[4096];
-    for (int i = 0; i < 16; i++)             /* 64 KB, at once when buffered */
+    /* the first read waits for nothing: an idle line costs no time per
+     * command (a 10 ms wait here took the frame rate down by two thirds,
+     * the review's finding); the later reads, only reached when something
+     * was there, allow 10 ms for the rest of a backlog, up to 64 KB */
+    if (readBytes(junk, sizeof junk, 0.0) == 0)
+        return;
+    for (int i = 1; i < 16; i++)
         if (readBytes(junk, sizeof junk, 0.01) == 0)
             break;
 }
@@ -314,9 +320,10 @@ bool ADSpecfirm::set(const char *command)
 }
 
 /* Whatever the board still sends (a late block, a stray BEL): read until
- * quiet, for at most about two seconds: a board in a foreign trigger mode
- * 3 with a fast trigger is never quiet, and the driver must not hang on
- * it (seen on the fake at 10 Hz). */
+ * quiet, bounded (32 reads of 4 KB: a few seconds under a block flood, up
+ * to ten under a trickle of BELs): a board in a foreign trigger mode 3
+ * with a fast trigger is never quiet, and the driver must not hang on it
+ * (seen on the fake at 10 Hz). */
 void ADSpecfirm::drain()
 {
     char junk[4096];
