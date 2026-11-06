@@ -25,7 +25,9 @@ sends, and never sends: `README.md`.
   (never re-push a tag), `ghcr.io/geecs-bella/ioc-spectrometer-runtime:<tag>`
   and `-developer`, made public once after the first tag. A pre-release tag
   (`2026.11.1b1`) for bench work from a branch. A local build:
-  `DOCKER_DEFAULT_PLATFORM=linux/amd64 TARGET=runtime TAG=ioc-spectrometer:local ./build`.
+  `DOCKER_DEFAULT_PLATFORM=linux/amd64 TARGET=runtime TAG=ioc-spectrometer:local ./build`;
+  it runs `git clean -fdx ioc` first, so a fresh copy of the template is
+  committed before its first build (README, "Build").
 - **Pins.** geecs-epics' compose files pin the tag; a bump is a tag here and
   one line there, then `pull <service>` and recreate on the host.
 - **Merging**: after a fresh-context review dispositioned on the PR, and the
