@@ -69,6 +69,9 @@ count and little-endian 16-bit counts.
   acquisition start takes a board out of it: the setting's acknowledgement
   is found past the flood's remnants (every setting is verified by a query
   afterwards), and the discard and drain budgets cover a backlog of blocks.
+  While such a flood lasts a status poll's value can still be wrong once;
+  the next poll corrects it (geecs-epics ccttest1,
+  `records/fake-review-2026-11-06.txt`).
 - **Status** every 10 s while idle (ADBase's `ReadStatus`, given `SCAN 10
   second` by the template):
   `*MEAS:TEMPE` into `TemperatureActual`, `*CONTR:MOTOR?` into
