@@ -258,6 +258,19 @@ bool ADSpecfirm::query(const char *command, char *reply, size_t size, double tim
         reply[0] = static_cast<char>(first);
         reply[1] = '\0';
         bool ok = readLine(reply + 1, size - 1, 0.5);
+        /* a block's remnant can begin with a printable byte: the board's
+         * text is ASCII plus the degree and micro signs (Latin-1) */
+        bool text = true;
+        for (const unsigned char *p = reinterpret_cast<const unsigned char *>(reply); *p; p++)
+            if (*p < 0x20 || (*p >= 0x7F && *p != 0xB0 && *p != 0xB5)) {
+                text = false;
+                break;
+            }
+        if (!text) {
+            strayBlocks_++;
+            drain();
+            continue;
+        }
         setStringParam(ADStringFromServer, reply);
         return ok;
     }
