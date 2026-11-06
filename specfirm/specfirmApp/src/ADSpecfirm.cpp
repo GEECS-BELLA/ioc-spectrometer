@@ -126,6 +126,19 @@ ADSpecfirm::ADSpecfirm(const char *portName, const char *linePort, int maxPixels
 /* ------------------------------------------------------------------------ */
 /* the line                                                                 */
 
+/* What arrived before a command (a late block, a trigger edge's BEL):
+ * discarded with short reads, a bounded number of them. Not asyn's port
+ * flush: the IP port's keeps reading while bytes keep coming, and a board
+ * in trigger mode 1 with a 10 Hz edge sends one BEL every 100 ms for ever
+ * (the driver hung there on the fake, 2026-11-06). */
+void ADSpecfirm::discardPending()
+{
+    char junk[4096];
+    for (int i = 0; i < 4; i++)
+        if (readBytes(junk, sizeof junk, 0.01) == 0)
+            break;
+}
+
 bool ADSpecfirm::send(const char *command)
 {
     char line[128];
@@ -133,7 +146,7 @@ bool ADSpecfirm::send(const char *command)
     size_t nwrite = strlen(line), nactual = 0;
     if (!pasynUserLine_)
         return false;
-    pasynOctetSyncIO->flush(pasynUserLine_);
+    discardPending();
     asynStatus status = pasynOctetSyncIO->write(pasynUserLine_, line, nwrite, 1.0, &nactual);
     setStringParam(ADStringToServer, command);
     if (status != asynSuccess || nactual != nwrite) {
@@ -170,13 +183,14 @@ bool ADSpecfirm::readByte(unsigned char *b, double timeout)
  * in its trigger mode after a stop), skipped and counted. */
 bool ADSpecfirm::readByteSkippingBell(unsigned char *b, double timeout)
 {
-    for (;;) {
+    for (int skipped = 0; skipped < 100; skipped++) {
         if (!readByte(b, timeout))
             return false;
         if (*b != BEL)
             return true;
         strayBells_++;
     }
+    return false;      /* a BEL stream faster than the reply: give up as a timeout would */
 }
 
 /* One CR-terminated answer, the CR dropped. */

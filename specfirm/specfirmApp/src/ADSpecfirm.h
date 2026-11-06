@@ -91,6 +91,7 @@ private:
     enum ReplyByte { ACK = 0x06, BEL = 0x07, NAK = 0x15, ETX = 0x03 };
 
     /* the line: every call with the driver lock held unless said otherwise */
+    void discardPending();
     bool send(const char *command);
     size_t readBytes(char *buf, size_t n, double timeout);
     bool readByte(unsigned char *b, double timeout);

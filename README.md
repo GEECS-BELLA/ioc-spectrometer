@@ -55,8 +55,11 @@ count and little-endian 16-bit counts.
   of an acquisition, the driver sets them (RAM). A stop while waiting for a
   trigger ends at once; the board stays in its trigger mode, so a later
   edge's BEL can arrive at any time: the driver skips a BEL wherever text or
-  a length word is expected (counted in `report`), and `send` flushes the
-  line before each command. A board left in trigger mode 3 by another
+  a length word is expected (counted in `report`; a hundred in a row ends
+  the read as a timeout would), and `send` discards what arrived before a
+  command with a few short reads, never asyn's port flush, whose IP-port
+  form keeps reading while bytes keep coming (a 10 Hz edge in mode 1 hung
+  the driver there on the fake). A board left in trigger mode 3 by another
   client sends BEL and a whole block on every edge: a text reply that begins
   with a byte that is no text is drained (for at most about two seconds: a
   fast trigger in mode 3 is never quiet) and the query sent again, three
