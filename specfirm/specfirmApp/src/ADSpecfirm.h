@@ -8,8 +8,13 @@
  * interpose discards the bytes of a read that drvAsynSerialPort reports as
  * a timeout, which it does for a byte arriving in the last ~0.1 s of a
  * timed read; waiting for the measurement in 0.5 s slices, the driver lost
- * the board's BEL that way on every exposure over 0.5 s, about one frame
- * in five (geecs-epics, ccttest1, 2026-11-06).
+ * the board's BEL that way on every frame of the exposure lengths whose
+ * BEL lands in the window, about a fifth of those over 0.5 s (geecs-epics,
+ * ccttest1, 2026-11-06). ibek's asyn.AsynIP entity passes noProcessEos;
+ * its asyn.AsynSerial does not (it emits an asynSetOption the serial port
+ * rejects), so a serial line is a startup command. Without the interpose
+ * the constructor's setInputEos/setOutputEos calls fail as not implemented,
+ * harmlessly: the driver never needed them.
  *
  * Every spectrum is one 1-D NDUInt16 NDArray [pixels] on address 0, the
  * detector's counts in stream order, stamped at the end of the exposure,

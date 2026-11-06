@@ -23,8 +23,10 @@ entity_models:
         description: |-
           The asyn octet port of the board's line, configured without asyn's
           EOS interpose (noProcessEos=1 on drvAsynSerialPortConfigure or
-          drvAsynIPPortConfigure): the driver frames the bytes itself, and
-          the interpose drops the bytes of a timed read reported as a timeout
+          drvAsynIPPortConfigure in a startup command, or an asyn.AsynIP
+          entity; asyn.AsynSerial cannot leave it out): the driver frames the
+          bytes itself, and the interpose drops the bytes of a timed read
+          reported as a timeout
       P:
         type: str
         description: |-
