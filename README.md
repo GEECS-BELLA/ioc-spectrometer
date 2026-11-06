@@ -65,7 +65,9 @@ count and little-endian 16-bit counts.
   fast trigger in mode 3 is never quiet) and the query sent again, three
   times in all, then `LastError_RBV` says the line is flooded (counted too);
   the driver itself never selects mode 3 (External is mode 1), and an
-  acquisition start takes a board out of it.
+  acquisition start takes a board out of it: the setting's acknowledgement
+  is found past the flood's remnants (every setting is verified by a query
+  afterwards), and the discard and drain budgets cover a backlog of blocks.
 - **Status** every 10 s while idle (ADBase's `ReadStatus`, given `SCAN 10
   second` by the template):
   `*MEAS:TEMPE` into `TemperatureActual`, `*CONTR:MOTOR?` into

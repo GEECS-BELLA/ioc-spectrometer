@@ -134,7 +134,7 @@ ADSpecfirm::ADSpecfirm(const char *portName, const char *linePort, int maxPixels
 void ADSpecfirm::discardPending()
 {
     char junk[4096];
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 16; i++)             /* 64 KB, at once when buffered */
         if (readBytes(junk, sizeof junk, 0.01) == 0)
             break;
 }
@@ -265,25 +265,37 @@ bool ADSpecfirm::query(const char *command, char *reply, size_t size, double tim
     return false;
 }
 
-/* A setting: ACK, or false with the reason. */
+/* A setting: ACK, or false with the reason. Bytes that are neither (the
+ * remnants of a foreign mode 3's block flood, which stops once the setting
+ * takes) are skipped and counted, within a bounded budget: every setting
+ * the driver makes is verified by a query afterwards, so a 0x06 inside a
+ * block's data cannot pass as an acknowledgement unnoticed. */
 bool ADSpecfirm::set(const char *command)
 {
     if (!send(command))
         return false;
-    unsigned char first;
-    if (!readByteSkippingBell(&first, 1.0)) {
-        fail("no answer to", command);
-        return false;
+    unsigned char b;
+    double timeout = 1.0;
+    for (size_t skipped = 0; skipped < 65536; skipped++) {
+        if (!readByte(&b, timeout)) {
+            fail(skipped ? "no acknowledgement in the stream after" : "no answer to", command);
+            return false;
+        }
+        if (b == ACK)
+            return true;
+        if (b == NAK) {
+            char why[128];
+            deviceError(why, sizeof why);
+            fail(command, why);
+            return false;
+        }
+        if (b == BEL)
+            strayBells_++;
+        else if (skipped == 0)
+            strayBlocks_++;
+        timeout = 0.2;
     }
-    if (first == ACK)
-        return true;
-    if (first == NAK) {
-        char why[128];
-        deviceError(why, sizeof why);
-        fail(command, why);
-        return false;
-    }
-    fail("unexpected byte after", command);
+    fail("no acknowledgement within 64 KB after", command);
     drain();
     return false;
 }
@@ -295,7 +307,7 @@ bool ADSpecfirm::set(const char *command)
 void ADSpecfirm::drain()
 {
     char junk[4096];
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < 32; i++)             /* 128 KB, at once when buffered */
         if (readBytes(junk, sizeof junk, 0.2) == 0)
             break;
 }
