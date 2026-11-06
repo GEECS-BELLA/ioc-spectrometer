@@ -34,7 +34,8 @@ ADSpecfirm::ADSpecfirm(const char *portName, const char *linePort, int maxPixels
                ASYN_CANBLOCK, 1, 0, 0),
       pasynUserLine_(NULL), maxPixels_(maxPixels > 0 ? maxPixels : 4096), pixels_(0),
       connected_(false), exposing_(false), boardTrigger_(0), boardSlope_(0),
-      storedTintMs_(0.0), storedAverages_(1), minTintMs_(0.01), rawHeaderUs_(0), uniqueId_(0)
+      storedTintMs_(0.0), storedAverages_(1), minTintMs_(0.01), rawHeaderUs_(0), strayBells_(0),
+      strayBlocks_(0), uniqueId_(0)
 {
     strncpy(linePort_, linePort, sizeof linePort_ - 1);
     linePort_[sizeof linePort_ - 1] = '\0';
@@ -125,6 +126,25 @@ ADSpecfirm::ADSpecfirm(const char *portName, const char *linePort, int maxPixels
 /* ------------------------------------------------------------------------ */
 /* the line                                                                 */
 
+/* What arrived before a command (a late block, a trigger edge's BEL):
+ * discarded with short reads, a bounded number of them. Not asyn's port
+ * flush: the IP port's keeps reading while bytes keep coming, and a board
+ * in trigger mode 1 with a 10 Hz edge sends one BEL every 100 ms for ever
+ * (the driver hung there on the fake, 2026-11-06). */
+void ADSpecfirm::discardPending()
+{
+    char junk[4096];
+    /* the first read waits for nothing: an idle line costs no time per
+     * command (a 10 ms wait here took the frame rate down by two thirds,
+     * the review's finding); the later reads, only reached when something
+     * was there, allow 10 ms for the rest of a backlog, up to 64 KB */
+    if (readBytes(junk, sizeof junk, 0.0) == 0)
+        return;
+    for (int i = 1; i < 16; i++)
+        if (readBytes(junk, sizeof junk, 0.01) == 0)
+            break;
+}
+
 bool ADSpecfirm::send(const char *command)
 {
     char line[128];
@@ -132,7 +152,7 @@ bool ADSpecfirm::send(const char *command)
     size_t nwrite = strlen(line), nactual = 0;
     if (!pasynUserLine_)
         return false;
-    pasynOctetSyncIO->flush(pasynUserLine_);
+    discardPending();
     asynStatus status = pasynOctetSyncIO->write(pasynUserLine_, line, nwrite, 1.0, &nactual);
     setStringParam(ADStringToServer, command);
     if (status != asynSuccess || nactual != nwrite) {
@@ -164,13 +184,28 @@ bool ADSpecfirm::readByte(unsigned char *b, double timeout)
     return readBytes(reinterpret_cast<char *>(b), 1, timeout) == 1;
 }
 
+/* A byte where text or a length word is expected: a BEL there is the
+ * board's only unsolicited byte (a trigger edge's "done" while the board is
+ * in its trigger mode after a stop), skipped and counted. */
+bool ADSpecfirm::readByteSkippingBell(unsigned char *b, double timeout)
+{
+    for (int skipped = 0; skipped < 100; skipped++) {
+        if (!readByte(b, timeout))
+            return false;
+        if (*b != BEL)
+            return true;
+        strayBells_++;
+    }
+    return false;      /* a BEL stream faster than the reply: give up as a timeout would */
+}
+
 /* One CR-terminated answer, the CR dropped. */
 bool ADSpecfirm::readLine(char *buf, size_t size, double timeout)
 {
     size_t i = 0;
     for (;;) {
         unsigned char b;
-        if (!readByte(&b, i == 0 ? timeout : 0.5)) {
+        if (!readByteSkippingBell(&b, i == 0 ? timeout : 0.5)) {
             buf[i] = '\0';
             return false;
         }
@@ -194,63 +229,107 @@ void ADSpecfirm::deviceError(char *buf, size_t size)
     memmove(buf, s, strlen(s) + 1);
 }
 
-/* A query: the answer line, or false with the board's reason in LastError. */
+/* A query: the answer line, or false with the board's reason in LastError.
+ * A board left in its trigger mode 3 by another client sends BEL and a
+ * whole data block on every edge: a reply that starts with a byte that is
+ * no text (the block's length word) is drained and the query sent again,
+ * three times in all; a board that floods the line faster than that is
+ * reported in LastError, and an acquisition start takes it out of mode 3. */
 bool ADSpecfirm::query(const char *command, char *reply, size_t size, double timeout)
 {
-    reply[0] = '\0';
-    if (!send(command))
-        return false;
-    unsigned char first;
-    if (!readByte(&first, timeout)) {
-        fail("no answer to", command);
-        return false;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        reply[0] = '\0';
+        if (!send(command))
+            return false;
+        unsigned char first;
+        if (!readByteSkippingBell(&first, timeout)) {
+            fail("no answer to", command);
+            return false;
+        }
+        if (first == NAK) {
+            char why[128];
+            deviceError(why, sizeof why);
+            fail(command, why);
+            return false;
+        }
+        if (first == '\r' || first == ETX) {
+            setStringParam(ADStringFromServer, "");
+            return true;
+        }
+        if (first < 0x20 || first == ACK) {
+            strayBlocks_++;
+            drain();
+            continue;
+        }
+        reply[0] = static_cast<char>(first);
+        reply[1] = '\0';
+        bool ok = readLine(reply + 1, size - 1, 0.5);
+        /* a block's remnant can begin with a printable byte: the board's
+         * text is ASCII plus the degree and micro signs (Latin-1) */
+        bool text = true;
+        for (const unsigned char *p = reinterpret_cast<const unsigned char *>(reply); *p; p++)
+            if (*p < 0x20 || (*p >= 0x7F && *p != 0xB0 && *p != 0xB5)) {
+                text = false;
+                break;
+            }
+        if (!text) {
+            strayBlocks_++;
+            drain();
+            continue;
+        }
+        setStringParam(ADStringFromServer, reply);
+        return ok;
     }
-    if (first == NAK) {
-        char why[128];
-        deviceError(why, sizeof why);
-        fail(command, why);
-        return false;
-    }
-    if (first == '\r' || first == ETX) {
-        setStringParam(ADStringFromServer, "");
-        return true;
-    }
-    reply[0] = static_cast<char>(first);
-    reply[1] = '\0';
-    bool ok = readLine(reply + 1, size - 1, 0.5);
-    setStringParam(ADStringFromServer, reply);
-    return ok;
+    fail("no text answer to (the board floods the line: a trigger mode 3 with a fast trigger?)", command);
+    return false;
 }
 
-/* A setting: ACK, or false with the reason. */
+/* A setting: ACK, or false with the reason. Bytes that are neither (the
+ * remnants of a foreign mode 3's block flood, which stops once the setting
+ * takes) are skipped and counted, within a bounded budget: every setting
+ * the driver makes is verified by a query afterwards, so a 0x06 inside a
+ * block's data cannot pass as an acknowledgement unnoticed. */
 bool ADSpecfirm::set(const char *command)
 {
     if (!send(command))
         return false;
-    unsigned char first;
-    if (!readByte(&first, 1.0)) {
-        fail("no answer to", command);
-        return false;
+    unsigned char b;
+    double timeout = 1.0;
+    for (size_t skipped = 0; skipped < 65536; skipped++) {
+        if (!readByte(&b, timeout)) {
+            fail(skipped ? "no acknowledgement in the stream after" : "no answer to", command);
+            return false;
+        }
+        if (b == ACK)
+            return true;
+        if (b == NAK) {
+            char why[128];
+            deviceError(why, sizeof why);
+            fail(command, why);
+            return false;
+        }
+        if (b == BEL)
+            strayBells_++;
+        else if (skipped == 0)
+            strayBlocks_++;
+        timeout = 0.2;
     }
-    if (first == ACK)
-        return true;
-    if (first == NAK) {
-        char why[128];
-        deviceError(why, sizeof why);
-        fail(command, why);
-        return false;
-    }
-    fail("unexpected byte after", command);
+    fail("no acknowledgement within 64 KB after", command);
     drain();
     return false;
 }
 
-/* Whatever the board still sends (a late block, a stray BEL): read until quiet. */
+/* Whatever the board still sends (a late block, a stray BEL): read until
+ * quiet, bounded (32 reads of 4 KB: a few seconds under a block flood, up
+ * to ten under a trickle of BELs): a board in a foreign trigger mode 3
+ * with a fast trigger is never quiet, and the driver must not hang on it
+ * (seen on the fake at 10 Hz). */
 void ADSpecfirm::drain()
 {
-    char junk[512];
-    while (readBytes(junk, sizeof junk, 0.2) > 0) {
-    }
+    char junk[4096];
+    for (int i = 0; i < 32; i++)             /* 128 KB, at once when buffered */
+        if (readBytes(junk, sizeof junk, 0.2) == 0)
+            break;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -329,7 +408,11 @@ bool ADSpecfirm::connect()
     if (query("*PARA:TRIG?", reply, sizeof reply)) {
         boardTrigger_ = atoi(reply);
         setIntegerParam(P_BoardTrigger, boardTrigger_);
-        setIntegerParam(ADTriggerMode, boardTrigger_ == 0 ? ADTriggerInternal : ADTriggerExternal);
+        /* the measure modes (1, 3) are External; 0 and the enquiry mode (2)
+         * Internal. Nothing is written here: the setpoint takes this value
+         * and a later write of the same value changes nothing. */
+        setIntegerParam(ADTriggerMode, (boardTrigger_ == 1 || boardTrigger_ == 3)
+                                           ? ADTriggerExternal : ADTriggerInternal);
     }
     if (query("*PARA:TRSL?", reply, sizeof reply)) {
         boardSlope_ = atoi(reply);
@@ -582,12 +665,12 @@ bool ADSpecfirm::waitForBell(double limit, bool *stopped)
 bool ADSpecfirm::readBlock(size_t header, size_t *pixels, double timeout)
 {
     unsigned char len[2];
-    if (readBytes(reinterpret_cast<char *>(len), 2, timeout) != 2) {
+    if (!readByteSkippingBell(&len[0], timeout) || !readByte(&len[1], timeout)) {
         fail("no block after the measurement", "");
         return false;
     }
     size_t nbytes = len[0] | (static_cast<size_t>(len[1]) << 8);
-    size_t limit = rawHeader + 2 * static_cast<size_t>(maxPixels_);
+    size_t limit = header + 2 * static_cast<size_t>(maxPixels_);
     if (nbytes < header || ((nbytes - header) & 1) || nbytes > limit) {
         char msg[64];
         snprintf(msg, sizeof msg, "%zu bytes", nbytes);
@@ -619,7 +702,7 @@ bool ADSpecfirm::frameInternal(double tintMs, int averages, bool raw)
     if (!send(cmd))
         return false;
     unsigned char first;
-    if (!readByte(&first, 2.0)) {
+    if (!readByteSkippingBell(&first, 2.0)) {
         fail("no answer to", cmd);
         disconnect("the board does not answer");
         return false;
@@ -803,12 +886,15 @@ asynStatus ADSpecfirm::writeInt32(asynUser *pasynUser, epicsInt32 value)
         }
         epicsEventSignal(wake_);
     } else if (function == ADTriggerMode || function == P_TriggerSlope) {
+        /* written to the board only when the value changes: the records'
+         * PINI writes at start repeat the values read from the board */
+        int current = 0;
+        getIntegerParam(function, &current);
         setIntegerParam(function, value);
-        if (connected_ && !exposing_)
+        if (value != current && connected_ && !exposing_)
             applyTrigger();
     } else if (function == ADReadStatus) {
-        if (value)
-            readStatus();
+        readStatus();
     } else if (function == NDDataType) {
         setIntegerParam(NDDataType, NDUInt16);
     } else if (function == ADShutterControl) {
@@ -860,9 +946,9 @@ void ADSpecfirm::report(FILE *fp, int details)
     char model[64] = "", version[64] = "";
     getStringParam(ADModel, sizeof model, model);
     getStringParam(ADFirmwareVersion, sizeof version, version);
-    fprintf(fp, "ADSpecfirm %s on %s: %s (%s), %d pixels, trigger %d, stored %.3f ms x %d\n",
+    fprintf(fp, "ADSpecfirm %s on %s: %s (%s), %d pixels, trigger %d, stored %.3f ms x %d, %u stray BEL, %u stray blocks\n",
             portName, linePort_, connected_ ? model : "not connected", version, pixels_,
-            boardTrigger_, storedTintMs_, storedAverages_);
+            boardTrigger_, storedTintMs_, storedAverages_, strayBells_, strayBlocks_);
     ADDriver::report(fp, details);
 }
 

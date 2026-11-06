@@ -259,10 +259,9 @@ record(mbbi, "$(P)$(R)BoardTrigger_RBV")
 }
 
 # Temperature, the shutter motor's state and the board's error word, every
-# 10 s while idle (the driver skips the read during an exposure)
-record(bo, "$(P)$(R)StatusPoll")
+# 10 s while idle (the driver skips the read during an exposure): ADBase's
+# own ReadStatus, given a scan
+record(bo, "$(P)$(R)ReadStatus")
 {
     field(SCAN, "10 second")
-    field(VAL,  "1")
-    field(OUT,  "$(P)$(R)ReadStatus PP")
 }
