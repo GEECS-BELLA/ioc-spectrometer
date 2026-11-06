@@ -132,8 +132,17 @@ names aliased at `P`: `Acquire`, `ImageMode`, `NumImages`, `TriggerMode`,
 `Saturated_RBV`, `BoardTime_RBV`, `Connected_RBV`, `DetectorState_RBV`,
 `StatusMessage_RBV`, `LastError_RBV`, `ArrayCounter_RBV`,
 `TemperatureActual`, the identity and the fit). `LINE` names the line's asyn
-port: an `asyn.AsynSerial` or `asyn.AsynIP` entity, or a port made by a
-startup command. `MAX_PIXELS` (default 4096) sizes the buffers and
+port, configured without asyn's EOS interpose: `noProcessEos=1` on
+`drvAsynSerialPortConfigure` or `drvAsynIPPortConfigure` in a startup
+command (geecs-epics' `include/serial-line` scripts take `NOEOS=1`), or
+ibek's `asyn.AsynIP` entity, which passes `noProcessEos`; not ibek's
+`asyn.AsynSerial`, which configures the port with the interpose and then
+emits an `asynSetOption` for `noProcessEos` that the serial port rejects.
+The driver frames its own bytes, and the interpose discards the bytes of a
+read that `drvAsynSerialPort` reports as a timeout, which it does for a byte
+arriving in the last ~0.1 s of a timed read: with the interpose the board's
+BEL was lost on every frame of the exposure lengths whose BEL lands in the
+window, about a fifth of those over 0.5 s (ccttest1, 2026-11-06). `MAX_PIXELS` (default 4096) sizes the buffers and
 `Wavelength_RBV`; a board with more refuses to connect.
 
 An instance: geecs-epics `services/undulator/spectrometers/ccttest1/config/ioc.yaml`,
