@@ -58,8 +58,11 @@ count and little-endian 16-bit counts.
   a length word is expected (counted in `report`), and `send` flushes the
   line before each command. A board left in trigger mode 3 by another
   client sends BEL and a whole block on every edge: a text reply that begins
-  with a byte that is no text is drained and the query sent once more
-  (counted too); the driver itself never selects mode 3 (External is mode 1).
+  with a byte that is no text is drained (for at most about two seconds: a
+  fast trigger in mode 3 is never quiet) and the query sent again, three
+  times in all, then `LastError_RBV` says the line is flooded (counted too);
+  the driver itself never selects mode 3 (External is mode 1), and an
+  acquisition start takes a board out of it.
 - **Status** every 10 s while idle (ADBase's `ReadStatus`, given `SCAN 10
   second` by the template):
   `*MEAS:TEMPE` into `TemperatureActual`, `*CONTR:MOTOR?` into

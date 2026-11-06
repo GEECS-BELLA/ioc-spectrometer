@@ -212,11 +212,12 @@ void ADSpecfirm::deviceError(char *buf, size_t size)
 /* A query: the answer line, or false with the board's reason in LastError.
  * A board left in its trigger mode 3 by another client sends BEL and a
  * whole data block on every edge: a reply that starts with a byte that is
- * no text (the block's length word) is drained and the query sent once
- * more. */
+ * no text (the block's length word) is drained and the query sent again,
+ * three times in all; a board that floods the line faster than that is
+ * reported in LastError, and an acquisition start takes it out of mode 3. */
 bool ADSpecfirm::query(const char *command, char *reply, size_t size, double timeout)
 {
-    for (int attempt = 0; attempt < 2; attempt++) {
+    for (int attempt = 0; attempt < 3; attempt++) {
         reply[0] = '\0';
         if (!send(command))
             return false;
@@ -246,7 +247,7 @@ bool ADSpecfirm::query(const char *command, char *reply, size_t size, double tim
         setStringParam(ADStringFromServer, reply);
         return ok;
     }
-    fail("no text answer to", command);
+    fail("no text answer to (the board floods the line: a trigger mode 3 with a fast trigger?)", command);
     return false;
 }
 
@@ -273,12 +274,16 @@ bool ADSpecfirm::set(const char *command)
     return false;
 }
 
-/* Whatever the board still sends (a late block, a stray BEL): read until quiet. */
+/* Whatever the board still sends (a late block, a stray BEL): read until
+ * quiet, for at most about two seconds: a board in a foreign trigger mode
+ * 3 with a fast trigger is never quiet, and the driver must not hang on
+ * it (seen on the fake at 10 Hz). */
 void ADSpecfirm::drain()
 {
-    char junk[512];
-    while (readBytes(junk, sizeof junk, 0.2) > 0) {
-    }
+    char junk[4096];
+    for (int i = 0; i < 10; i++)
+        if (readBytes(junk, sizeof junk, 0.2) == 0)
+            break;
 }
 
 /* ------------------------------------------------------------------------ */
