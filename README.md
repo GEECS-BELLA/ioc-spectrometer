@@ -157,8 +157,11 @@ CI publishes `ghcr.io/geecs-bella/ioc-spectrometer-runtime:<tag>` and
 
     DOCKER_DEFAULT_PLATFORM=linux/amd64 TARGET=runtime TAG=ioc-spectrometer:local ./build
 
-(the variable is required on Apple silicon). `tests/run-tests.sh <tag>` starts
-the image with `tests/config` (no hardware).
+(the variable is required on Apple silicon). `build` runs
+`git clean -fdx ioc` first (the template's script): in a fresh copy of the template,
+commit before the first build, or the generated `ioc/` is deleted (seen on
+this repo's first build, 2026-11-05; geecs-epics #16, the CCT slice).
+`tests/run-tests.sh <tag>` starts the image with `tests/config` (no hardware).
 
 ## Licence
 
