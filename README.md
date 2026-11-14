@@ -83,7 +83,8 @@ count and little-endian 16-bit counts.
   until the bench says what 1 and 0 do), `*STAT:TXTERR?` into `LastError_RBV`
   when non-zero. Never during an exposure.
 - **Level**: `LevelMax_RBV`, `LevelPercent_RBV` and `Saturated_RBV`
-  (MAJOR) from each frame.
+  (MINOR: a clipped spectrum is a warning about the data, not a fault of
+  the device) from each frame.
 
 ### What the driver writes, and never writes
 
