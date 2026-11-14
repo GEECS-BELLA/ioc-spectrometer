@@ -154,7 +154,7 @@ record(bi, "$(P)$(R)Saturated_RBV")
     field(SCAN, "I/O Intr")
     field(ZNAM, "OK")
     field(ONAM, "Saturated")
-    field(OSV,  "MAJOR")
+    field(OSV,  "MINOR")
 }
 
 # The board's own clock at the frame, s since it started
